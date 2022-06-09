@@ -1,0 +1,279 @@
+# DONE: Change the name of the org
+org: sirdannymunn
+app: flashcards
+service: flashcards
+
+plugins:
+  - serverless-webpack
+  - serverless-iam-roles-per-function
+  - serverless-plugin-tracing
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  lambdaHashingVersion: '20201221'
+
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'eu-west-2'}
+
+  custom:
+    tracing:
+      apiGateway: true
+      lambda: true
+
+
+  tracing:
+    lambda: true
+    apiGateway: true
+
+  # Use these variables in the functions and resouorces section below. For example,
+  # ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+  environment:
+    LOCAL: true
+    DB_TABLE: flashcards-${self:provider.stage}
+    DB_CREATED_AT_INDEX: CreatedAtIndex
+    ATTACHMENT_S3_BUCKET: sirdannymunn-flashcards-${self:provider.stage}
+    SIGNED_URL_EXPIRATION: 300
+    SLS_DEBUG: true
+
+  logs:
+    # Enable API Gateway logs
+    restApi: true
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - xray:PutTelemetryRecords
+            - xray:PutTraceSegments
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+          Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*
+
+functions:
+  Auth:
+    handler: src/lambda/auth/auth0Authorizer.handler
+  GetFlashcard:
+    handler: src/lambda/http/flashcards/getFlashcard.handler
+    events:
+      - http:
+          method: get
+          path: flashcards
+          cors: true
+          authorizer: Auth
+    iamRoleStatementsInherit: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:Scan
+          - dynamodb:GetItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}/index/${self:provider.environment.DB_CREATED_AT_INDEX}
+      - Effect: Allow
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
+  CreateFlashcard:
+    handler: src/lambda/http/flashcards/createFlashcard.handler
+    events:
+      - http:
+          method: post
+          path: flashcards
+          cors: true
+          authorizer: Auth
+          request:
+            schema:
+              application/json: ${file(models/flashcards/create-flashcard-model.json)}
+    iamRoleStatementsInherit: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}/index/${self:provider.environment.DB_CREATED_AT_INDEX}
+      - Effect: Allow
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
+  UpdateFlashcard:
+    handler: src/lambda/http/flashcards/updateFlashcard.handler
+    events:
+      - http:
+          method: put
+          path: flashcards/{flashcardId}
+          cors: true
+          authorizer: Auth
+          request:
+            schema:
+              application/json: ${file(models/flashcards/update-flashcard-model.json)}
+    iamRoleStatementsInherit: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}/index/${self:provider.environment.DB_CREATED_AT_INDEX}
+      - Effect: Allow
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
+  DeleteFlashcard:
+    handler: src/lambda/http/flashcards/deleteFlashcard.handler
+    events:
+      - http:
+          method: delete
+          path: flashcards/{flashcardId}
+          cors: true
+          authorizer: Auth
+    iamRoleStatementsInherit: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}/index/${self:provider.environment.DB_CREATED_AT_INDEX}
+      - Effect: Allow
+        Action:
+          - "xray:PutTraceSegments"
+          - "xray:PutTelemetryRecords"
+        Resource:
+          - "*"
+#  GenerateUploadUrl:
+#    handler: src/lambda/http/flashcards/generateUploadUrl.handler
+#    events:
+#      - http:
+#          method: post
+#          path: flashcards/{flashcardId}/attachment
+#          cors: true
+#          authorizer: Auth
+#    iamRoleStatementsInherit: true
+#    iamRoleStatements:
+#      - Effect: Allow
+#        Action:
+#          - s3:PutObject
+#          - s3:GetObject
+#        Resource: "arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*"
+#      - Effect: Allow
+#        Action:
+#          - dynamodb:GetItem
+#          - dynamodb:PutItem
+#          - dynamodb:UpdateItem
+#        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}
+#      - Effect: Allow
+#        Action:
+#          - dynamodb:GetItem
+#          - dynamodb:PutItem
+#          - dynamodb:UpdateItem
+#        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DB_TABLE}/index/${self:provider.environment.DB_CREATED_AT_INDEX}
+#      - Effect: Allow
+#        Action:
+#          - "xray:PutTraceSegments"
+#          - "xray:PutTelemetryRecords"
+#        Resource:
+#          - "*"
+
+resources:
+  Resources:
+    # Add necessary AWS resources. You will need at least the following AWS resources
+    # TODO: Fill the properties
+    # Feel free to change the names as you like.
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'*'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+
+    # TODO: Create a DynamoDB table with local secondary index and a composite key
+    FlashcardsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: flashcardId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: flashcardId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.DB_TABLE}
+        LocalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.DB_CREATED_AT_INDEX}
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL # What attributes will be copied to an index
+
+    # TODO: Complete the bucket properties below.
+    # Do not forget to add the CorsConfiguration property
+    AttachmentsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
+
+    # TODO: Complete the policy below and attach it to the bucket defined above
+    # For cross referencing the name of the bucket, use "!Ref AttachmentsBucket"
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        PolicyDocument:
+          Id: MyPolicy
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadForGetBucketObjects
+              Effect: Allow
+              Principal: '*'
+              Action: s3:GetObject
+              Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*
+        Bucket: !Ref AttachmentsBucket
